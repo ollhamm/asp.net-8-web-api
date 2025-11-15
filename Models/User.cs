@@ -25,6 +25,9 @@ namespace aspnetcoreapi.Models
         [Required]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        public string? ResetPasswordToken { get; set; }
+        public DateTime? ResetPasswordTokenExpiry { get; set; }
+
         [JsonIgnore]
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     }

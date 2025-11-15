@@ -11,17 +11,19 @@ using System.Text;
 
 namespace aspnetcoreapi.Services
 {
-    public class AuthService
+        public class AuthService
     {
         private readonly IUserRepository _users;
         private readonly IRoleRepository _roles;
 
         private readonly IConfiguration _config;
-        public AuthService(IUserRepository users, IRoleRepository roles, IConfiguration config)
+        private readonly EmailServices _emailService = null!;
+        public AuthService(IUserRepository users, IRoleRepository roles, IConfiguration config, EmailServices emailService)
         {
             _users = users;
             _roles = roles;
             _config = config;
+            _emailService = emailService;
         }
 
         // SIGN UP METHOD
@@ -152,6 +154,75 @@ namespace aspnetcoreapi.Services
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
             return (jwt, expires);
         }
+
+
+        // FORGOT PASSWORD METHOD
+        public async Task<string> ForgotPasswordAsync(string email, CancellationToken ct = default)
+        {
+            var user = await _users.GetByEmailAsync(email, ct);
+            if (user is null)
+                throw new InvalidOperationException("User not found.");
+
+            // Generate reset token
+            var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+            user.ResetPasswordToken = token;
+            user.ResetPasswordTokenExpiry = DateTime.UtcNow.AddHours(1);
+
+            await _users.UpdateAsync(user, ct);
+
+            // Create reset link
+            var clientUrl = _config["AppSettings:ClientUrl"] ?? "http://localhost:3000";
+            var resetLink = $"{clientUrl}/reset-password?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}";
+
+            // Send email
+            var emailBody = $@"
+                <h2>Reset Your Password</h2>
+                <p>Hi {user.Name},</p>
+                <p>We received a request to reset your password. Click the link below to reset it:</p>
+                <p><a href='{resetLink}'>Reset Password</a></p>
+                <p>This link will expire in 1 hour.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+            ";
+
+            try
+            {
+                await _emailService.SendEmailAsync(email, "Reset Your Password", emailBody, ct);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Failed to send reset email. Please try again later.");
+            }
+
+            return token;
+        }
+
+        // RESET PASSWORD METHOD
+        public async Task ResetPasswordAsync(string email, string token, string newPassword, CancellationToken ct = default)
+        {
+            var user = await _users.GetByEmailAsync(email, ct);
+            if (user is null || user.ResetPasswordToken != token)
+                throw new InvalidOperationException("Invalid reset token.");
+
+            if (user.ResetPasswordTokenExpiry < DateTime.UtcNow)
+                throw new InvalidOperationException("Reset token has expired.");
+
+            // hash new password
+            var salt = RandomNumberGenerator.GetBytes(16);
+            var hash = KeyDerivation.Pbkdf2(
+                password: newPassword,
+                salt: salt,
+                prf: KeyDerivationPrf.HMACSHA256,
+                iterationCount: 100_000,
+                numBytesRequested: 32);
+            user.PasswordSalt = salt;
+            user.PasswordHash = hash;
+            user.ResetPasswordToken = null;
+            user.ResetPasswordTokenExpiry = null;
+
+            await _users.UpdateAsync(user, ct);
+        }
+
+
 
         // ASSIGN ROLE TO USER
         public Task AssignRoleToUserAsync(Guid userId, Guid roleId, CancellationToken ct = default) =>

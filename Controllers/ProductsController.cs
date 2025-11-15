@@ -1,4 +1,3 @@
-// ...existing code...
 using Microsoft.AspNetCore.Mvc;
 using aspnetcoreapi.Services;
 using aspnetcoreapi.DTOs;
@@ -12,7 +11,12 @@ namespace aspnetcoreapi.Controllers;
 public class ProductsController : ControllerBase
 {
     private readonly ProductService _service;
-    public ProductsController(ProductService service) => _service = service;
+    private readonly IWebHostEnvironment _env;
+    public ProductsController(ProductService service, IWebHostEnvironment env)
+    {
+        _service = service;
+        _env = env;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -45,22 +49,73 @@ public class ProductsController : ControllerBase
     }
 
     [HttpPost("create")]
-    public async Task<IActionResult> Create([FromBody] ProductCreateRequest dto)
+    public async Task<IActionResult> Create([FromForm] ProductCreateRequest dto, [FromForm] List<IFormFile>? images)
     {
-        var created = await _service.AddAsync(dto);
+        var imageUrls = new List<string>();
+        if (images != null)
+        {
+            foreach (var img in images)
+            {
+                var ext = Path.GetExtension(img.FileName).ToLower();
+                if (ext != ".jpg" && ext != ".png" && ext != ".jpeg")
+                    return BadRequest(new ApiResponse
+                    {
+                        Title = "Bad Request",
+                        Status = 400,
+                        Message = "Only .jpg, .jpeg, and .png formats are allowed.",
+                        Data = null
+                    });
+                var fileName = $"{Guid.NewGuid()}{ext}";
+                var folder = Path.Combine(_env.WebRootPath, "uploads", "products");
+                Directory.CreateDirectory(folder);
+                var path = Path.Combine(folder, fileName);
+                using var stream = new FileStream(path, FileMode.Create);
+                {
+                    await img.CopyToAsync(stream);
+                }
+                imageUrls.Add($"/uploads/products/{fileName}");
+            }
+        }
+        var created = await _service.AddAsync(dto, imageUrls);
         var response = new ApiResponse
         {
             Title = "Product Created",
             Status = 201,
-            Message = $"Product created successfully",
+            Message = "Product created successfully.",
             Data = created
         };
         return StatusCode(201, response);
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] ProductDto dto)
+    public async Task<IActionResult> Update(Guid id, [FromForm] ProductDto dto, [FromForm] List<IFormFile>? images)
     {
+        var imageUrls = new List<string>();
+        if (images != null)
+        {
+            foreach (var img in images)
+            {
+                var ext = Path.GetExtension(img.FileName).ToLower();
+                if (ext != ".jpg" && ext != ".png" && ext != ".jpeg")
+                    return BadRequest(new ApiResponse
+                    {
+                        Title = "Bad Request",
+                        Status = 400,
+                        Message = "Only .jpg, .jpeg, and .png formats are allowed.",
+                        Data = null
+                    });
+                var fileName = $"{Guid.NewGuid()}{ext}";
+                var folder = Path.Combine(_env.WebRootPath, "uploads", "products");
+                Directory.CreateDirectory(folder);
+                var path = Path.Combine(folder, fileName);
+                using var stream = new FileStream(path, FileMode.Create);
+                {
+                    await img.CopyToAsync(stream);
+                }
+                imageUrls.Add($"/uploads/products/{fileName}");
+            }
+        }
+        dto.Images = imageUrls;
         var updated = await _service.UpdateAsync(id, dto);
         var response = new ApiResponse
         {

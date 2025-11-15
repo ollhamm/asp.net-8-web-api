@@ -15,7 +15,9 @@ public class ProductRepository : IProductRepository
 
     // GET BY ID
     public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        await _db.Products.FindAsync(new object?[] { id }, ct);
+        await _db.Products
+            .Include(p => p.Images)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
 
     // ADD DATA
     public async Task<Product> AddAsync(Product product, CancellationToken ct = default)
@@ -28,8 +30,26 @@ public class ProductRepository : IProductRepository
     // UPDATE DATA
     public async Task UpdateAsync(Product product, CancellationToken ct = default)
     {
-        _db.Products.Update(product);
-        await _db.SaveChangesAsync(ct);
+        var existing = await _db.Products
+            .Include(p => p.Images)
+            .FirstOrDefaultAsync(p => p.Id == product.Id, ct);
+
+        if (existing == null) return;
+
+        // Update property utama
+        existing.Name = product.Name;
+        existing.Price = product.Price;
+
+        // Hapus semua images lama
+        _db.ProductImages.RemoveRange(existing.Images);
+        await _db.SaveChangesAsync(ct); // commit penghapusan dulu
+
+        // Tambahkan images baru
+        existing.Images = product.Images
+            .Select(img => new ProductImage { ImageUrl = img.ImageUrl, ProductId = existing.Id })
+            .ToList();
+
+        await _db.SaveChangesAsync(ct); // commit penambahan
     }
 
     // DELETE DATA

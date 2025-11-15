@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using aspnetcoreapi.DTOs.Auth;
 using aspnetcoreapi.Services;
+using aspnetcoreapi.Common;
 
 namespace aspnetcoreapi.Controllers
 {
@@ -62,8 +63,56 @@ namespace aspnetcoreapi.Controllers
         public async Task<IActionResult> Logout(CancellationToken ct)
         {
             // Hapus cookie access_token
-            Response.Cookies.Delete("access_token");
+            var cookieExists = await Task.FromResult(Request.Cookies.ContainsKey("access_token"));
+            if (cookieExists)
+            {
+                Response.Cookies.Append("access_token", "", new CookieOptions
+                {
+                    Expires = DateTimeOffset.UtcNow.AddDays(-1),
+                });
+            }
             return Ok(new { message = "Logout successful" });
         }
+
+        // POST: api/auth/forgot-password
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
+        {
+            var token = await _auth.ForgotPasswordAsync(req.Email);
+            
+            // HANYA UNTUK DEVELOPMENT TESTING
+            #if DEBUG
+            return Ok(new ApiResponse
+            {
+                Title = "Success",
+                Status = 200,
+                Message = "Password reset link has been sent to your email.",
+                Data = new { token = token } // Hanya muncul di development
+            });
+            #else
+            return Ok(new ApiResponse
+            {
+                Title = "Success",
+                Status = 200,
+                Message = "Password reset link has been sent to your email.",
+                Data = null
+            });
+            #endif
+        }
+
+        // POST: api/auth/reset-password
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req)
+        {
+            await _auth.ResetPasswordAsync(req.Email, req.Token, req.NewPassword);
+            return Ok(new ApiResponse
+            {
+                Title = "Success",
+                Status = 200,
+                Message = "Password has been reset successfully.",
+                Data = null
+            });
+        }
+
     }
 }

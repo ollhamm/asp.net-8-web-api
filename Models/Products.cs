@@ -11,6 +11,8 @@ namespace aspnetcoreapi.Models
 
         public decimal Price { get; set; }
 
+        public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
+        
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
